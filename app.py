@@ -3,27 +3,14 @@ from dotenv import load_dotenv
 import streamlit as st
 import fitz
 from collections import Counter
-import spacy
-from spacy.cli import download as spacy_download
 import google.generativeai as genai
 import matplotlib.pyplot as plt
 import seaborn as sns
+import re
 
 # Load environment variables
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
-# Initialize NLP model
-@st.cache_resource
-def load_nlp_model():
-    try:
-        nlp = spacy.load("en_core_web_sm")
-    except OSError:
-        spacy_download("en_core_web_sm")
-        nlp = spacy.load("en_core_web_sm")
-    return nlp
-
-nlp = load_nlp_model()
 
 # Function to extract text from PDF
 def input_pdf_setup(uploaded_file):
@@ -39,9 +26,10 @@ def input_pdf_setup(uploaded_file):
 
 # Function to extract top keywords from the text
 def extract_keywords(text):
-    doc = nlp(text)
+    # Use regex to find words and filter them
+    words = re.findall(r'\b\w+\b', text.lower())
     job_related_stopwords = {'responsibilities', 'experience', 'requirements', 'qualifications'}
-    keywords = [token.text.lower() for token in doc if token.is_alpha and not token.is_stop and token.text.lower() not in job_related_stopwords]
+    keywords = [word for word in words if word.isalpha() and word not in job_related_stopwords]
     return Counter(keywords).most_common(10)  # Top 10 keywords
 
 # Function to generate response from Gemini model
