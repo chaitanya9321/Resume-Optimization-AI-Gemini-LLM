@@ -53,6 +53,31 @@ st.markdown("""
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select Page", ["Single Resume Analysis", "Resume Comparison"])
 
+# Enhanced Prompts
+input_prompt1 = """
+As an experienced Human Resource Manager, your role is to assess the provided resume in relation to the job description.
+Evaluate the candidate's qualifications, experiences, and skills against the specified requirements. 
+Please highlight the strengths that align well with the role and any weaknesses or gaps that may need addressing.
+"""
+
+input_prompt2 = """
+You are a Human Resource Manager with expertise in evaluating talent across various fields.
+Carefully analyze the resume in the context of the job description provided. 
+Share your insights regarding the candidate's fit for the role, and offer constructive feedback on areas for improvement and skill enhancement.
+"""
+
+input_prompt3 = """
+You are an ATS (Applicant Tracking System) specialist. Evaluate the resume against the job description.
+Identify any critical keywords that are missing from the resume and suggest improvements to ensure the candidate's profile stands out.
+Provide additional recommendations for enhancing the candidate's overall presentation and alignment with the role.
+"""
+
+input_prompt4 = """
+You are an ATS expert tasked with evaluating the compatibility of the resume with the provided job description.
+Calculate the percentage match between the two documents. 
+Additionally, list the missing keywords and provide final thoughts on the candidate's suitability for the role, including any suggestions for strengthening their application.
+"""
+
 if page == "Single Resume Analysis":
     st.title("JobFit Analyzer - Single Resume Analysis")
 
@@ -80,31 +105,6 @@ if page == "Single Resume Analysis":
 
     if uploaded_file is not None:
         st.success("Resume PDF Uploaded Successfully")
-
-    # Enhanced Prompts
-    input_prompt1 = """
-    As an experienced Human Resource Manager, your role is to assess the provided resume in relation to the job description.
-    Evaluate the candidate's qualifications, experiences, and skills against the specified requirements. 
-    Please highlight the strengths that align well with the role and any weaknesses or gaps that may need addressing.
-    """
-
-    input_prompt2 = """
-    You are a Human Resource Manager with expertise in evaluating talent across various fields.
-    Carefully analyze the resume in the context of the job description provided. 
-    Share your insights regarding the candidate's fit for the role, and offer constructive feedback on areas for improvement and skill enhancement.
-    """
-
-    input_prompt3 = """
-    You are an ATS (Applicant Tracking System) specialist. Evaluate the resume against the job description.
-    Identify any critical keywords that are missing from the resume and suggest improvements to ensure the candidate's profile stands out.
-    Provide additional recommendations for enhancing the candidate's overall presentation and alignment with the role.
-    """
-
-    input_prompt4 = """
-    You are an ATS expert tasked with evaluating the compatibility of the resume with the provided job description.
-    Calculate the percentage match between the two documents. 
-    Additionally, list the missing keywords and provide final thoughts on the candidate's suitability for the role, including any suggestions for strengthening their application.
-    """
 
     # Function to handle button actions
     def handle_button_action(button, prompt):
@@ -145,7 +145,14 @@ if page == "Single Resume Analysis":
     elif submit4:
         handle_button_action(submit4, input_prompt4)
     elif submit5:
-        handle_button_action(submit5, input_prompt)
+        if uploaded_file is not None and input_text:
+            with st.spinner("Processing your query..."):
+                pdf_content = input_pdf_setup(uploaded_file)
+                response = get_gemini_response(input_prompt, pdf_content, input_text)
+                st.subheader("Query Result")
+                st.write(response)
+        else:
+            st.warning("Please upload both the resume and job description to proceed.")
 
     st.markdown("""---""")
 
@@ -193,7 +200,7 @@ else:
 
 footer = """
 ---
-#### Made By [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
+#### Made with ❤️ by [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
 For Queries, Reach out on [LinkedIn](https://www.linkedin.com/in/naga-chaitanya-chowlur/)  
 *Resume Mastery: Your Gateway to Job Application Success*
 """
