@@ -1,141 +1,237 @@
+import base64
 from dotenv import load_dotenv
-
-load_dotenv()
-
 import streamlit as st
 import os
-from PIL import Image
-import io
-import pdf2image
-import base64
 import fitz
-
+from collections import Counter
+import spacy
+from spacy.cli import download as spacy_download  # Import download function
 import google.generativeai as genai
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
-os.getenv("GOOGLE_API_KEY")
+# Load environment variables
+load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-def get_gemini_response(input, pdf_content, prompt):
-    model = genai.GenerativeModel('gemini-pro')
-    response = model.generate_content([input, pdf_content, prompt])
-    return response.text
+# Initialize NLP model
+@st.cache_resource
+def load_nlp_model():
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        # If the model is not found, download it
+        spacy_download("en_core_web_sm")
+        nlp = spacy.load("en_core_web_sm")
+    return nlp
 
+nlp = load_nlp_model()
+
+# Function to extract text from PDF
 def input_pdf_setup(uploaded_file):
     if uploaded_file is not None:
-        # Read the PDF file
         document = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-        # Initialize a list to hold the text of each page
         text_parts = []
-
-        # Iterate over the pages of the PDF to extract the text
         for page in document:
             text_parts.append(page.get_text())
-
-        # Concatenate the list into a single string with a space in between each part
         pdf_text_content = " ".join(text_parts)
         return pdf_text_content
     else:
         raise FileNotFoundError("No file uploaded")
 
-## Streamlit App
+# Function to extract top keywords from the text
+def extract_keywords(text):
+    doc = nlp(text)
+    job_related_stopwords = {'responsibilities', 'experience', 'requirements', 'qualifications'}
+    keywords = [token.text.lower() for token in doc if token.is_alpha and not token.is_stop and token.text.lower() not in job_related_stopwords]
+    return Counter(keywords).most_common(10)  # Top 10 keywords
 
-st.set_page_config(page_title="Resume Expert")
+# Function to generate response from Gemini model
+@st.cache_data
+def get_gemini_response(input, pdf_content, prompt):
+    model = genai.GenerativeModel('gemini-pro')
+    response = model.generate_content([input, pdf_content, prompt])
+    return response.text
 
-st.header("JobFit Analyzer")
-input_text = st.text_input("Job Description: ", key="input")
-uploaded_file = st.file_uploader("Upload your Resume(PDF)...", type=["pdf"])
-pdf_content = ""
+# Custom CSS for styling and responsiveness
+st.markdown("""
+<style>
+    .stApp { max-width: 1200px; margin: 0 auto; }
+    .stButton>button { width: 100%; }
+    .css-1d391kg { padding-top: 1rem; }
+    @media (max-width: 768px) { .stApp { padding: 1rem; } }
+</style>
+""", unsafe_allow_html=True)
 
-if uploaded_file is not None:
-    st.write("PDF Uploaded Successfully")
+# Sidebar for navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Select Page", ["Single Resume Analysis", "Resume Comparison"])
 
-submit1 = st.button("Tell Me About the Resume")
+if page == "Single Resume Analysis":
+    st.title("JobFit Analyzer - Single Resume Analysis")
 
-submit2 = st.button("How Can I Improvise my Skills")
+    col1, col2 = st.columns([1, 1])
 
-submit3 = st.button("What are the Keywords That are Missing")
+    with col1:
+        st.subheader("Job Description")
+        input_text = st.text_area("Enter Job Description:", height=150)
+        uploaded_jd_file = st.file_uploader("Or Upload Job Description (PDF)...", type=["pdf"], key="jd_upload")
 
-submit4 = st.button("Percentage match")
+        st.subheader("Resume")
+        uploaded_file = st.file_uploader("Upload your Resume (PDF)...", type=["pdf"], key="resume_upload")
 
-input_promp = st.text_input("Queries: Feel Free to Ask here")
+    with col2:
+        st.subheader("Analysis Options")
+        submit1 = st.button("📄 Tell Me About the Resume")
+        submit2 = st.button("🛠️ How Can I Improve My Skills")
+        submit3 = st.button("🔍 What Keywords Are Missing")
+        submit4 = st.button("📊 Percentage Match")
+        input_prompt = st.text_input("💬 Custom Query:")
+        submit5 = st.button("🤔 Answer My Query")
 
-submit5 = st.button("Answer My Query")
+    if uploaded_jd_file is not None:
+        input_text = input_pdf_setup(uploaded_jd_file)
 
-input_prompt1 = """
- You are an experienced Technical Human Resource Manager,your task is to review the provided resume against the job description. 
-  Please share your professional evaluation on whether the candidate's profile aligns with the role. 
- Highlight the strengths and weaknesses of the applicant in relation to the specified job requirements.
-"""
-
-input_prompt2 = """
-You are an Technical Human Resource Manager with expertise in data science, 
-your role is to scrutinize the resume in light of the job description provided. 
-Share your insights on the candidate's suitability for the role from an HR perspective. 
-Additionally, offer advice on enhancing the candidate's skills and identify areas where improvement is needed.
-"""
-
-input_prompt3 = """
-You are an skilled ATS (Applicant Tracking System) scanner with a deep understanding of data science and ATS functionality, 
-your task is to evaluate the resume against the provided job description. As a Human Resource manager,
- assess the compatibility of the resume with the role. Give me what are the keywords that are missing
- Also, provide recommendations for enhancing the candidate's skills and identify which areas require further development.
-"""
-input_prompt4 = """
-You are an skilled ATS (Applicant Tracking System) scanner with a deep understanding of data science and ATS functionality, 
-your task is to evaluate the resume against the provided job description. give me the percentage of match if the resume matches
-the job description. First the output should come as percentage and then keywords missing and last final thoughts.
-"""
-
-if submit1:
     if uploaded_file is not None:
-        pdf_content = input_pdf_setup(uploaded_file)
-        response = get_gemini_response(input_prompt1, pdf_content, input_text)
-        st.subheader("The Response is")
-        st.write(response)
-    else:
-        st.write("Please upload a PDF file to proceed.")
+        st.success("Resume PDF Uploaded Successfully")
 
-elif submit2:
-    if uploaded_file is not None:
-        pdf_content = input_pdf_setup(uploaded_file)
-        response = get_gemini_response(input_prompt2, pdf_content, input_text)
-        st.subheader("The Response is")
-        st.write(response)
-    else:
-        st.write("Please upload a PDF file to proceed.")
+    # Enhanced Prompts
+    input_prompt1 = """
+    As an experienced Human Resource Manager, your role is to assess the provided resume in relation to the job description.
+    Evaluate the candidate's qualifications, experiences, and skills against the specified requirements. 
+    Please highlight the strengths that align well with the role and any weaknesses or gaps that may need addressing.
+    """
 
-elif submit3:
-    if uploaded_file is not None:
-        pdf_content = input_pdf_setup(uploaded_file)
-        response = get_gemini_response(input_prompt3, pdf_content, input_text)
-        st.subheader("The Response is")
-        st.write(response)
-    else:
-        st.write("Please upload a PDF file to proceed.")
+    input_prompt2 = """
+    You are a Human Resource Manager with expertise in evaluating talent across various fields.
+    Carefully analyze the resume in the context of the job description provided. 
+    Share your insights regarding the candidate's fit for the role, and offer constructive feedback on areas for improvement and skill enhancement.
+    """
 
-elif submit4:
-    if uploaded_file is not None:
-        pdf_content = input_pdf_setup(uploaded_file)
-        response = get_gemini_response(input_prompt4, pdf_content, input_text)
-        st.subheader("The Response is")
-        st.write(response)
-    else:
-        st.write("Please upload a PDF file to proceed.")
+    input_prompt3 = """
+    You are an ATS (Applicant Tracking System) specialist. Evaluate the resume against the job description.
+    Identify any critical keywords that are missing from the resume and suggest improvements to ensure the candidate's profile stands out.
+    Provide additional recommendations for enhancing the candidate's overall presentation and alignment with the role.
+    """
 
-elif submit5:
-    if uploaded_file is not None:
-        pdf_content = input_pdf_setup(uploaded_file)
-        response = get_gemini_response(input_promp, pdf_content, input_text)
-        st.subheader("The Response is")
-        st.write(response)
-    else:
-        st.write("Please upload a PDF file to proceed.")
+    input_prompt4 = """
+    You are an ATS expert tasked with evaluating the compatibility of the resume with the provided job description.
+    Calculate the percentage match between the two documents. 
+    Additionally, list the missing keywords and provide final thoughts on the candidate's suitability for the role, including any suggestions for strengthening their application.
+    """
 
-footer = """
+    # Function to handle button actions
+    def handle_button_action(button, prompt):
+        if uploaded_file is not None and input_text:
+            with st.spinner("Analyzing the resume..."):
+                pdf_content = input_pdf_setup(uploaded_file)
+                response = get_gemini_response(prompt, pdf_content, input_text)
+                st.subheader("Analysis Result")
+                st.write(response)
+
+                # Download report
+                report_content = f"**Resume Analysis Report**\n\n**Job Description:**\n{input_text}\n\n**Resume Content:**\n{pdf_content}\n\n**Analysis Result:**\n{response}"
+                st.download_button(
+                    label="Download Analysis Report",
+                    data=report_content,
+                    file_name="analysis_report.txt",
+                    mime="text/plain"
+                )
+                
+                if button == submit3:
+                    keywords = extract_keywords(pdf_content)
+                    st.subheader("Top Keywords")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    sns.barplot(x=[count for _, count in keywords], y=[word for word, _ in keywords], ax=ax)
+                    plt.title("Top Keywords in Resume")
+                    plt.xlabel("Frequency")
+                    st.pyplot(fig)
+        else:
+            st.warning("Please upload both the resume and job description to proceed.")
+
+    # Button Actions
+    if submit1:
+        handle_button_action(submit1, input_prompt1)
+    elif submit2:
+        handle_button_action(submit2, input_prompt2)
+    elif submit3:
+        handle_button_action(submit3, input_prompt3)
+    elif submit4:
+        handle_button_action(submit4, input_prompt4)
+    elif submit5:
+        handle_button_action(submit5, input_prompt)
+
+    st.markdown("""---""")
+
+else:
+    # Resume Comparison
+    st.title("JobFit Analyzer - Resume Comparison")
+
+    # Job Description Input
+    st.subheader("Job Description")
+    input_text = st.text_area("Enter Job Description (or upload as PDF):", height=150)
+    uploaded_jd_file = st.file_uploader("Or Upload Job Description (PDF)...", type=["pdf"], key="jd_upload_compare")
+
+    if uploaded_jd_file is not None:
+        st.success("Job Description Uploaded Successfully")
+        input_text = input_pdf_setup(uploaded_jd_file)
+
+    # Select number of resumes
+    n_resumes = st.number_input("Select the number of resumes to compare (2-10):", 2, 10, 2)
+
+    # Upload multiple resumes
+    uploaded_files = []
+    for i in range(n_resumes):
+        file = st.file_uploader(f"Upload Resume {i + 1} (PDF)", type=["pdf"], key=f"resume_{i}")
+        if file:
+            uploaded_files.append(file)
+
+    if st.button("Compare Resumes"):
+        if len(uploaded_files) >= 2:
+            # Analyze each resume
+            resume_scores = []
+            for uploaded_file in uploaded_files:
+                resume_content = input_pdf_setup(uploaded_file)
+                score = get_gemini_response("Score this resume on a scale of 0-100 based on its match with the job description. Only return the numeric score.", resume_content, input_text)
+                try:
+                    score = float(score)
+                except ValueError:
+                    score = 0  # Default score if parsing fails
+                resume_scores.append((uploaded_file.name, score))
+
+            # Sort resumes by score
+            resume_scores.sort(key=lambda x: x[1], reverse=True)
+
+            # Display results
+            st.subheader("Comparison Results")
+            df = pd.DataFrame(resume_scores, columns=['Resume', 'Score'])
+            st.dataframe(df)
+
+            # Data Visualization: Bar Chart of Scores
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.barplot(x='Score', y='Resume', data=df, ax=ax)
+            ax.set_xlabel('Scores')
+            ax.set_title('Resume Comparison Scores')
+            plt.xlim(0, 100)  # Set x-axis limit to 0-100
+
+            # Display the plot
+            st.pyplot(fig)
+
+            # Download comparison report
+            comparison_report = "### Resume Comparison Report\n\n" + "\n".join([f"**{name}:** {score}" for name, score in resume_scores])
+            st.download_button(
+                label="Download Comparison Report",
+                data=comparison_report,
+                file_name="comparison_report.txt",
+                mime="text/plain"
+            )
+        else:
+            st.warning("Please upload at least two resumes to compare.")
+
+# Add footer with information
+st.markdown("""
 ---
-#### Made By [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
-For Queries, Reach out on [LinkedIn](https://www.linkedin.com/in/naga-chaitanya-chowlur/)  
-*Resume Mastery: Your Gateway to Job Application Success*
-"""
-
-st.markdown(footer, unsafe_allow_html=True)
+#### Made with ❤️ by [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
+For Queries, Reach out on [LinkedIn](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
+""")
