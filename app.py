@@ -1,14 +1,12 @@
-import base64
+import os
 from dotenv import load_dotenv
 import streamlit as st
-import os
 import fitz
 from collections import Counter
 import spacy
-from spacy.cli import download as spacy_download  # Import download function
+from spacy.cli import download as spacy_download
 import google.generativeai as genai
 import matplotlib.pyplot as plt
-import pandas as pd
 import seaborn as sns
 
 # Load environment variables
@@ -21,7 +19,6 @@ def load_nlp_model():
     try:
         nlp = spacy.load("en_core_web_sm")
     except OSError:
-        # If the model is not found, download it
         spacy_download("en_core_web_sm")
         nlp = spacy.load("en_core_web_sm")
     return nlp
@@ -184,54 +181,33 @@ else:
     uploaded_files = []
     for i in range(n_resumes):
         file = st.file_uploader(f"Upload Resume {i + 1} (PDF)", type=["pdf"], key=f"resume_{i}")
-        if file:
+        if file is not None:
             uploaded_files.append(file)
 
     if st.button("Compare Resumes"):
-        if len(uploaded_files) >= 2:
-            # Analyze each resume
-            resume_scores = []
-            for uploaded_file in uploaded_files:
-                resume_content = input_pdf_setup(uploaded_file)
-                score = get_gemini_response("Score this resume on a scale of 0-100 based on its match with the job description. Only return the numeric score.", resume_content, input_text)
-                try:
-                    score = float(score)
-                except ValueError:
-                    score = 0  # Default score if parsing fails
-                resume_scores.append((uploaded_file.name, score))
+        if input_text and len(uploaded_files) > 0:
+            for resume_file in uploaded_files:
+                pdf_content = input_pdf_setup(resume_file)
+                response = get_gemini_response(input_prompt1, pdf_content, input_text)
+                st.subheader(f"Analysis Result for Resume {uploaded_files.index(resume_file) + 1}")
+                st.write(response)
 
-            # Sort resumes by score
-            resume_scores.sort(key=lambda x: x[1], reverse=True)
-
-            # Display results
-            st.subheader("Comparison Results")
-            df = pd.DataFrame(resume_scores, columns=['Resume', 'Score'])
-            st.dataframe(df)
-
-            # Data Visualization: Bar Chart of Scores
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.barplot(x='Score', y='Resume', data=df, ax=ax)
-            ax.set_xlabel('Scores')
-            ax.set_title('Resume Comparison Scores')
-            plt.xlim(0, 100)  # Set x-axis limit to 0-100
-
-            # Display the plot
-            st.pyplot(fig)
-
-            # Download comparison report
-            comparison_report = "### Resume Comparison Report\n\n" + "\n".join([f"**{name}:** {score}" for name, score in resume_scores])
-            st.download_button(
-                label="Download Comparison Report",
-                data=comparison_report,
-                file_name="comparison_report.txt",
-                mime="text/plain"
-            )
+                # Download report for each resume
+                report_content = f"**Resume Comparison Report for Resume {uploaded_files.index(resume_file) + 1}**\n\n**Job Description:**\n{input_text}\n\n**Resume Content:**\n{pdf_content}\n\n**Analysis Result:**\n{response}"
+                st.download_button(
+                    label=f"Download Analysis Report for Resume {uploaded_files.index(resume_file) + 1}",
+                    data=report_content,
+                    file_name=f"comparison_report_resume_{uploaded_files.index(resume_file) + 1}.txt",
+                    mime="text/plain"
+                )
         else:
-            st.warning("Please upload at least two resumes to compare.")
+            st.warning("Please ensure a job description and at least one resume is uploaded for comparison.")
 
-# Add footer with information
-st.markdown("""
+footer = """
 ---
-#### Made with ❤️ by [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
-For Queries, Reach out on [LinkedIn](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
-""")
+#### Made By [Chaitanya](https://www.linkedin.com/in/naga-chaitanya-chowlur/)
+For Queries, Reach out on [LinkedIn](https://www.linkedin.com/in/naga-chaitanya-chowlur/)  
+*Resume Mastery: Your Gateway to Job Application Success*
+"""
+
+st.markdown(footer, unsafe_allow_html=True)
